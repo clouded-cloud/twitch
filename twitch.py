@@ -1,0 +1,1 @@
+Strong knowledge of medication therapy, drug interactions, and side effects
