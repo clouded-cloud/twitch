@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Minimal Twitch chat-bot (IRC/TLS) – no external deps.
+Now also auto-posts random phrases every N seconds.
 """
 
 import os
@@ -18,9 +19,21 @@ CONFIG = {
     "server": "irc.chat.twitch.tv",
     "port": 6697,                       # 6697 = TLS; 6667 = plain
     "nickname": "my_bot_account",       # Twitch username (lowercase)
-    "token": "oauth:tmlw0q0y000q9ucey1r3ouphcfb7bw",  # from https://twitchapps.com/tmi/
-    "channel": "https://www.twitch.tv/sdfr4k"           # include leading '#'
+    "token": "oauth:YOUR_TOKEN_HERE",   # Get from https://twitchtokengenerator.com
+    "channel": "#sdfr4k"                # include leading '#'
 }
+
+# ------------------------------------------------------------------
+# Auto-spam phrases & timing
+# ------------------------------------------------------------------
+RANDOM_PHRASES = [
+    "Follow for more amazing content!",
+    "Type !discord for our server link!",
+    "Have a great day everyone 🌞",
+    "Check out my latest clip: twitch.tv/someclip",
+    "Welcome new viewers! Say hi 👋"
+]
+POST_INTERVAL = 30   # seconds between auto-messages
 
 # ------------------------------------------------------------------
 # Helper: send raw IRC line
@@ -93,9 +106,22 @@ class TwitchBot:
             self.send_chat(f"{username} rolled a {roll} 🎲")
 
     # --------------------------------------------------------------
+    def auto_speaker(self):
+        """Background thread that posts a random phrase every POST_INTERVAL."""
+        while self.running:
+            time.sleep(POST_INTERVAL)
+            if self.running:  # still connected?
+                phrase = random.choice(RANDOM_PHRASES)
+                self.send_chat(phrase)
+                print(f"[auto] Sent: {phrase}")
+
+    # --------------------------------------------------------------
     def run_forever(self):
         self.running = True
         self.connect()
+
+        # Start the auto-spam thread
+        threading.Thread(target=self.auto_speaker, daemon=True).start()
 
         buffer = ""
         while self.running:
