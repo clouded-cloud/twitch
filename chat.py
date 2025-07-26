@@ -19,7 +19,7 @@ CONFIG = {
     "port": 6697,                       # 6697 = TLS; 6667 = plain
     "nickname": "my_bot_account",       # Twitch username (lowercase)
     "token": "oauth:tmlw0q0y000q9ucey1r3ouphcfb7bw",  # from https://twitchapps.com/tmi/
-    "channel": "#somechannel"           # include leading '#'
+    "channel": "https://www.twitch.tv/sdfr4k"           # include leading '#'
 }
 
 # ------------------------------------------------------------------
