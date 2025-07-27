@@ -12,45 +12,48 @@ import random
 import threading
 import time
 
-# ------------------------------------------------------------------
+# 
 # CONFIGURATION – edit these four items
-# ------------------------------------------------------------------
+# 
 CONFIG = {
     "server": "irc.chat.twitch.tv",
     "port": 6697,                       # 6697 = TLS; 6667 = plain
-    "nickname": "my_bot_account",       # Twitch username (lowercase)
-    "token": "oauth:YOUR_TOKEN_HERE",   # Get from https://twitchtokengenerator.com
-    "channel": "#sdfr4k"                # include leading '#'
+    "nickname": "my_bot_account",       
+    "token": "oauth:mgx9vrwf4oref1cfew3klggoqftenx",   
+    "channel": "#sdfr4k"                
 }
 
-# ------------------------------------------------------------------
+# 
 # Auto-spam phrases & timing
-# ------------------------------------------------------------------
+# 
 RANDOM_PHRASES = [
     "Follow for more amazing content!",
     "Type !discord for our server link!",
     "Have a great day everyone 🌞",
-    "Check out my latest clip: twitch.tv/someclip",
+    "Hi class",
     "Welcome new viewers! Say hi 👋"
+    "Hi girlfriend",
+    "Baddie",
+    "chrisssssss",
 ]
 POST_INTERVAL = 30   # seconds between auto-messages
 
-# ------------------------------------------------------------------
+# 
 # Helper: send raw IRC line
-# ------------------------------------------------------------------
+# 
 def send(sock, msg):
     sock.send((msg + "\r\n").encode("utf-8"))
 
-# ------------------------------------------------------------------
+# 
 # Main bot class
-# ------------------------------------------------------------------
+# 
 class TwitchBot:
     def __init__(self, conf):
         self.conf = conf
         self.sock = None
         self.running = False
 
-    # --------------------------------------------------------------
+    # 
     def connect(self):
         plain_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock = ssl.create_default_context().wrap_socket(
@@ -65,12 +68,12 @@ class TwitchBot:
 
         print("[bot] Connected and joined", self.conf["channel"])
 
-    # --------------------------------------------------------------
+    # -
     def send_chat(self, text):
         """Send a PRIVMSG to the configured channel."""
         send(self.sock, f"PRIVMSG {self.conf['channel']} :{text}")
 
-    # --------------------------------------------------------------
+    # -
     def handle_line(self, line):
         """
         Parse one IRC line and react if needed.
@@ -105,7 +108,7 @@ class TwitchBot:
             roll = random.randint(1, 6)
             self.send_chat(f"{username} rolled a {roll} 🎲")
 
-    # --------------------------------------------------------------
+    # Background thread that posts a random phrase every POST_INTERVAL.
     def auto_speaker(self):
         """Background thread that posts a random phrase every POST_INTERVAL."""
         while self.running:
@@ -115,7 +118,7 @@ class TwitchBot:
                 self.send_chat(phrase)
                 print(f"[auto] Sent: {phrase}")
 
-    # --------------------------------------------------------------
+    # 
     def run_forever(self):
         self.running = True
         self.connect()
@@ -137,9 +140,9 @@ class TwitchBot:
         self.sock.close()
         print("[bot] Disconnected.")
 
-# ------------------------------------------------------------------
+# 
 # Entry point
-# ------------------------------------------------------------------
+# 
 if __name__ == "__main__":
     bot = TwitchBot(CONFIG)
 
