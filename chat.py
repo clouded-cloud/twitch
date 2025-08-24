@@ -11,6 +11,7 @@ import re
 import random
 import threading
 import time
+import logging
 
 # 
 # CONFIGURATION – edit these four items
@@ -31,12 +32,13 @@ RANDOM_PHRASES = [
     "Type !discord for our server link!",
     "Have a great day everyone 🌞",
     "Hi class",
-    "Welcome new viewers! Say hi 👋"
+    "Welcome new viewers! Say hi 👋",  # Fixed: Added comma here
     "Hi girlfriend",
     "Baddie",
     "chrisssssss",
 ]
-POST_INTERVAL = 30   # seconds between auto-messages
+POST_INTERVAL_MIN = 20   # Minimum seconds between auto-messages
+POST_INTERVAL_MAX = 40   # Maximum seconds between auto-messages
 
 # 
 # Helper: send raw IRC line
@@ -52,93 +54,158 @@ class TwitchBot:
         self.conf = conf
         self.sock = None
         self.running = False
+        # Set up basic logging
+        logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+        self.logger = logging.getLogger(__name__)
 
-    # 
     def connect(self):
-        plain_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock = ssl.create_default_context().wrap_socket(
-            plain_sock, server_hostname=self.conf["server"]
-        )
-        self.sock.connect((self.conf["server"], self.conf["port"]))
+        try:
+            plain_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock = ssl.create_default_context().wrap_socket(
+                plain_sock, server_hostname=self.conf["server"]
+            )
+            self.sock.connect((self.conf["server"], self.conf["port"]))
 
-        # --- IRC handshake ---
-        send(self.sock, f"PASS {self.conf['token']}")
-        send(self.sock, f"NICK {self.conf['nickname']}")
-        send(self.sock, f"JOIN {self.conf['channel']}")
+            # --- IRC handshake ---
+            send(self.sock, f"PASS {self.conf['token']}")
+            send(self.sock, f"NICK {self.conf['nickname']}")
+            send(self.sock, f"JOIN {self.conf['channel']}")
 
-        print("[bot] Connected and joined", self.conf["channel"])
+            self.logger.info(f"Connected and joined {self.conf['channel']}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Connection failed: {e}")
+            return False
 
-    # -
     def send_chat(self, text):
         """Send a PRIVMSG to the configured channel."""
         send(self.sock, f"PRIVMSG {self.conf['channel']} :{text}")
 
-    # -
+    def parse_privmsg(self, line):
+        """
+        Parse a PRIVMSG line to extract username and message.
+        More robust than regex-only approach.
+        """
+        if "PRIVMSG" not in line:
+            return None, None
+            
+        try:
+            # Split into parts using colon as delimiter
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                return None, None
+                
+            # Extract username from the first part
+            username_part = parts[1].split("!")[0]
+            message = parts[2].strip()
+            
+            return username_part, message
+        except (IndexError, ValueError):
+            return None, None
+
+    def handle_command(self, username, command, args):
+        """
+        Handle chat commands in a dedicated function for better organization.
+        """
+        command = command.lower().strip()
+        
+        if command == "!hello":
+            self.send_chat(f"Hello, {username}!")
+            
+        elif command == "!dice":
+            roll = random.randint(1, 6)
+            self.send_chat(f"{username} rolled a {roll} 🎲")
+            
+        # Add more commands here as needed
+
     def handle_line(self, line):
         """
         Parse one IRC line and react if needed.
-        Examples:
-          :user!user@user.tmi.twitch.tv PRIVMSG #channel :actual message
-          PING :tmi.twitch.tv
         """
         # keep-alive
         if line.startswith("PING"):
             send(self.sock, "PONG :tmi.twitch.tv")
             return
 
-        # parse PRIVMSG
-        match = re.match(
-            r":([^!]+)!.* PRIVMSG ([^ ]+) :(.*)", line
-        )
-        if not match:
-            return  # not a chat message
-
-        username, channel, msg = match.groups()
-        msg = msg.strip()
+        # Handle PRIVMSG using more robust parsing
+        username, msg = self.parse_privmsg(line)
+        
+        if not username or not msg:
+            return  # not a valid chat message
 
         # ignore own messages
         if username.lower() == self.conf["nickname"].lower():
             return
 
-        # --- commands ------------------------------------------------
-        if msg == "!hello":
-            self.send_chat(f"Hello, {username}!")
+        # --- command handling ----------------------------------------
+        # Check if message starts with a command prefix
+        if msg.startswith("!"):
+            # Split command and arguments
+            parts = msg.split(maxsplit=1)
+            command = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            
+            self.handle_command(username, command, args)
 
-        elif msg == "!dice":
-            roll = random.randint(1, 6)
-            self.send_chat(f"{username} rolled a {roll} 🎲")
-
-    # Background thread that posts a random phrase every POST_INTERVAL.
     def auto_speaker(self):
-        """Background thread that posts a random phrase every POST_INTERVAL."""
+        """Background thread that posts random phrases at random intervals."""
         while self.running:
-            time.sleep(POST_INTERVAL)
-            if self.running:  # still connected?
-                phrase = random.choice(RANDOM_PHRASES)
-                self.send_chat(phrase)
-                print(f"[auto] Sent: {phrase}")
+            # Use random interval for more natural behavior
+            interval = random.randint(POST_INTERVAL_MIN, POST_INTERVAL_MAX)
+            time.sleep(interval)
+            
+            if self.running and self.sock:  # Check if still connected
+                try:
+                    phrase = random.choice(RANDOM_PHRASES)
+                    self.send_chat(phrase)
+                    self.logger.info(f"[auto] Sent: {phrase}")
+                except Exception as e:
+                    self.logger.error(f"Auto-speaker error: {e}")
 
-    # 
     def run_forever(self):
         self.running = True
-        self.connect()
-
-        # Start the auto-spam thread
-        threading.Thread(target=self.auto_speaker, daemon=True).start()
-
-        buffer = ""
+        
+        # Connection/reconnection loop
         while self.running:
-            try:
-                buffer += self.sock.recv(2048).decode("utf-8", errors="ignore")
-            except OSError:
-                break
+            if self.connect():
+                # Start the auto-spam thread
+                threading.Thread(target=self.auto_speaker, daemon=True).start()
 
-            while "\r\n" in buffer:
-                line, buffer = buffer.split("\r\n", 1)
-                self.handle_line(line.strip())
-
-        self.sock.close()
-        print("[bot] Disconnected.")
+                buffer = ""
+                try:
+                    while self.running:
+                        try:
+                            data = self.sock.recv(2048).decode("utf-8", errors="ignore")
+                            if not data:
+                                raise ConnectionError("Connection closed by server")
+                                
+                            buffer += data
+                            
+                            while "\r\n" in buffer:
+                                line, buffer = buffer.split("\r\n", 1)
+                                self.handle_line(line.strip())
+                                
+                        except (ConnectionError, OSError) as e:
+                            self.logger.error(f"Connection error: {e}")
+                            break
+                            
+                except Exception as e:
+                    self.logger.error(f"Unexpected error: {e}")
+                    
+                finally:
+                    if self.sock:
+                        self.sock.close()
+                    self.logger.info("Disconnected.")
+                    
+                    # Attempt reconnect after a delay if still running
+                    if self.running:
+                        self.logger.info("Attempting to reconnect in 5 seconds...")
+                        time.sleep(5)
+            else:
+                # Connection failed, wait before retry
+                if self.running:
+                    self.logger.info("Connection failed. Retrying in 10 seconds...")
+                    time.sleep(10)
 
 # 
 # Entry point
